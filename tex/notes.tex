@@ -1,0 +1,504 @@
+\documentclass[pdftex,letterpaper,11pt]{article}
+\usepackage[top=1in,bottom=1in,left=.8in,right=.8in]{geometry}	
+\usepackage[dvips]{graphicx}
+\usepackage{amsmath, amssymb, amsthm, bbm, mathtools, commath,amsfonts}
+\usepackage{datetime}
+\usepackage{hyperref}
+\usepackage{verbatim}
+\usepackage{lmodern}
+\usepackage{listings}
+
+\setlength{\parindent}{0mm}
+\setlength{\parskip}{2mm}
+
+\newtheorem{lemma}{Lemma}
+\newtheorem{theorem}{Theorem}
+\theoremstyle{definition}
+\newtheorem{example}{Example}[section]
+\theoremstyle{definition}
+\newtheorem{observation}{Observation}[section]
+\newtheorem{corollary}{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+
+\newcommand{\ind}{\mathbbm{1}}
+\newcommand{\RR}{\mathbb R}
+\newcommand{\NN}{\mathbb N}
+\newcommand{\PP}{\mathbb P}
+\newcommand{\EE}{\mathbb E}
+\newcommand{\mc}[1]{\mathcal{#1}}
+\newcommand{\mrm}[1]{\mathrm{#1}}
+\newcommand{\ol}[1]{\overline{#1}}
+\newcommand{\ul}[1]{\underline{#1}}
+
+
+\begin{document}
+
+\title{ORIE 6750: Optimal Learning}
+\author{Derek Lim}
+\date{Spring 2019}
+\maketitle
+
+\textbf{Instructor:} Peter Frazier
+
+\textbf{Course Description:}
+
+\textbf{Textbooks:} Notes online.
+
+\section*{Lecture 1: Introduction (1/22/19)}
+
+Planned Topics:
+\begin{itemize}
+	\item Partially observable Markov decision processes
+	\item Value of information analysis
+	\item Methods for solving POMDMPs: dynamic programming, reinforcement learning
+	\item Bayesian optimization
+	\item Multi-armed bandits
+	\item Active learning
+	\item Preference learning
+	\item Sequential hypothesis testing
+\end{itemize}
+
+\subsection*{Sequential Hypothesis Testing}
+
+Say we have a binary variable $\theta \in \{0,1\}$ that we want to estimate. The data that we have is $y_n \mid \theta \sim^{\mrm{iid}} f_\theta$. For instance, $y_n$ could be results of a coin flip, $\theta$ indicates whether or not the coin is fair, $f_0$ is a probability mass function for an unfair coin, and $f_1$ is a probability mass function for a fair coin. A historical example comes from WWII, in which $\theta$ indicates whether birds or a plane were in an area, and the $y_n$ are radar data.
+
+Say we have a fixed sample size $N$. With this data, we want to come up with a decision rule $\pi(y_{1:N}) \in \{0,1\}$ with a prediction of $\theta$. From a frequentist perspective, we would design $\pi$ to control the type 1 error:
+\[\PP(\pi(y_{1:N}) = 1 \mid \theta = 0) \leq \alpha\]
+and to control the type 2 error:
+\[\PP(\pi(y_{1:N}) = 0 \mid \theta = 1) \text{\; as small as possible}\]
+From a Bayesian perspective, we would assume that $\theta$ is drawn from a probability distribution (a prior)
+\[\theta \sim \mrm{Ber}(p_0)\]
+we would have a loss
+\[L(a,\theta) \text{ e.g. } \ind_{a \neq \theta}\]
+and we would design $\pi$ to make the expected loss small
+\[\EE\big[L(\pi(y_{1:N}), \theta)\big] \text{ small}\]
+
+As a Bayesian, the problem that we face is that an optimal choice still has some positive loss. As a frequentist, the problem that we face is balancing between Type 1 and Type 2 error. One way to deal with these issues is to make intelligent choices of sample size, that without changing the expected sample size, still do something to solve both problems.
+
+\subsection*{Quick introduction to Bayesian Machine Learning}
+
+We have the following expression for the posterior
+\begin{align*}
+	\PP(\theta=u \mid y_{1:n}) & = \frac{\PP(y_{1:n}\mid \theta=u) \PP(\theta = u)}{\sum_{u'=0}^1 \PP(y_{1:n}\mid \theta=u') \PP(\theta=u')}\\
+	& \propto \PP(y_{1:n}\mid \theta=u) \PP(\theta = u)\\
+	& = \prod_{m=1}^n f_u(y_m) \PP(\theta=u) & \text{\; iid assumption}
+\end{align*}
+
+We assume $\theta = \mrm{Ber}(p_0)$, so $\PP(\theta = u)$ is $p_0$ if $\theta =1$ and $1-p_0$ otherwise. Define
+\begin{align*}
+	p_n & = \PP(\theta = 1 \mid y_{1:n})\\
+		& = \frac{\prod_{m=1}^n f_1(y_m) p_0}{\prod_{m=1}^n f_1(y_m) + \prod_{m=1}^n f_0(y_m)[1-p_0]}
+\end{align*}
+We can define such things recursively
+\begin{align*}
+	p_{n+1} & = \PP(\theta=u \mid y_{1:n+1})\\
+			& \propto \PP(y_{n+1} \mid \theta = u, y_{1:n}) \PP(\theta=u \mid y_{1:n})\\
+			& = f_u(y_{n+1})\PP(\theta = u \mid y_{1:n}) & \text{ assumption}
+\end{align*}
+we also have $\PP(\theta = u \mid y_{1:n}) = p_n$ if $u=1$ and $1-p_n$ otherwise. Then we have the recursive updating
+\begin{align*}
+	p_{n+1} & = \frac{f_1(y_{n+1})p_n}{f_1(y_{n+1})p_n + f_0(y_{n+1})[1-p_n]}
+\end{align*}
+
+The predictive distribution is the density
+\begin{align*}
+	\PP(y_{n+1} \mid y_{1:n}) & = \sum_{u=0}^1 \PP(\theta=u \mid y_{1:n}) \PP(y_{n+1} \mid \theta=u,  y_{1:n})\\
+	& = \sum_{u=0}^1 \PP(\theta=u \mid y_{1:n}) f_u\\
+	& = p_n f_1 + (1-p_n) f_0
+\end{align*}
+again $\PP(\theta = u \mid y_{1:n})$ is $p_n$ if $u=1$ and $1-p_n$ otherwise.
+
+With some basic regularity conditions, the $p_n$ are not zero nor one:
+\begin{itemize}
+	\item $p_0 \in (0,1)$.
+	\item The $f_u$ have the same support.
+\end{itemize}
+
+Say we wish to simulate $\theta, y_{1:N}$ (and thus implicitly $p_{1:N}$). One approach is to first simulate $\theta \sim \mrm{Ber}(p_0)$ and independently draw $y_1, \ldots, y_m \sim f_\theta$.
+\begin{itemize}
+	\item[] $\theta \sim \mrm{Ber}(p_0)$
+	\item[] for $m=1, \ldots, N$
+		\begin{itemize}
+			\item[] $y_m \sim f_\theta$
+		\end{itemize}
+\end{itemize}
+
+Another approach is, at each $m=1, \ldots, N$, sequentially simulate $y_m \mid y_{1}, \ldots, y_{m-1}$. This means we draw from the predictive distribution, so $y_m \sim p_{m-1}f_1 + [1-p_{m-1}] f_0$. Finally, we simulate $\theta$ from $\PP(\theta \mid y_{1:N})$, meaning we draw $\theta \sim \mrm{Ber}(p_N)$.
+\begin{itemize}
+	\item[] for $m=1, \ldots, N$
+		\begin{itemize}
+			\item[] $y_m \sim p_{m-1}f_1 + [1-p_{m-1}]f_0$
+		\end{itemize}
+	\item[] $\theta \sim \mrm{Ber}(p_N)$
+\end{itemize}
+
+It turns out that the distributions of $y_{1:N}$ and $\theta$ are the same for both methods.
+
+\section*{Lecture 2: Sequential Hypothesis Testing and Dynamic Programming (1/27)}
+
+\subsection*{Sequential Hypothesis Testing}
+
+We continue from this model:
+\begin{itemize}
+	\item We have a variable $\theta \sim \mrm{Ber}(p_0)$
+	\item data $y_1, y_2, \ldots \mid \theta \sim^{\mrm{iid}} f_\theta$
+	\item We want a decision rule (policy) $\pi(y_{1:n}) \in \{-1, 0, 1\}$ where $-1$ means to take another sample, and $0$ or $1$ mean to stop and estimate $\theta$
+	\item We pay a cost $c$ for each sample
+	\item We have a horizon, a maximum number of samples $H \in \NN \cup \{\infty\}$
+	\item We have a loss function $L(\hat \theta, \theta)$.
+	\item The set of policies on a finite horizon $H$ is $\Pi_H = \{\pi : \pi(y_{1:H}) \neq -1 \; \forall y_{1:H}\}$ where $\pi$ are functions mapping a vector of observation of arbitrary length to $\{-1, 0, 1\}$.
+\end{itemize}
+The goal is to find $\pi \in \Pi_H$ that minimizes
+\[\EE^\pi[c \tau + L(\pi(y_{1:\tau}), \theta)]\]
+where $\tau$ is a stopping time
+\[\tau = \min \{n : \pi(y_{1:n}) \neq -1 \}\]
+Suppose we have decided to stop. The goal is to minimize
+\begin{align*}
+	\EE^\pi[L(\pi(y_{1:\tau}, \theta)] & = \EE^\pi[\EE^\pi[L(\pi(y_{1:\tau}, \theta) \mid y_{1:\tau}] ]\\
+									   & = \sum_{y_{1:\tau}} \PP^\pi(y_{1:\tau}) \EE^\pi[L(\pi(y_{1:\tau}, \theta) \mid y_{1:\tau}]]
+\end{align*}
+This gives a separable optimization problem, so we simply have to solve
+\begin{equation}\label{eq:1}
+\min_{\hat \theta} \EE^\pi[L(\hat \theta, \theta) \mid y_{1:\tau}]
+\end{equation}
+and set $\pi(y_{1:\tau})$ to a value of $\hat \theta$ that solves this problem, for each vector of observations $y_{1:\tau}$.
+
+\begin{example}
+	Say we have a loss function $L(\hat \theta, \theta) = \ind_{\hat \theta \neq \theta}$. Then \ref{eq:1} is equivalent to 
+	\[\min_{\hat \theta}\; \PP(\hat \theta \neq \theta \mid y_{1:\tau}) = \begin{cases}
+		p_\tau & \mbox{if $\hat \theta = 0$}\\
+		1-p_\tau & \mbox{if $\hat \theta = 1$}
+	\end{cases}\]
+	so the optimal choice of $\pi(y_{1:\tau})$ is
+	\[\pi(y_{1:\tau}) = \begin{cases}
+		1 & \mbox{if $p_\tau \geq 1/2$}\\
+		0 & \mbox{if $p_\tau \leq 1/2$}
+	\end{cases}\]
+	this means that \ref{eq:1} is just $p_\tau \wedge 1-p_\tau$.
+\end{example}
+We fix this example for the rest of the lecture to simplify notation.
+
+\subsection*{Dynamic Programming / Reinforcement Learning}
+
+Now we we will solve the problem by dynamic programming. We make the following definition
+\begin{itemize}
+	\item Value function or cost-to-go function
+		\[V(p, H) = \inf_{\pi \in \Pi_H} \EE^\pi[c\tau + L(\pi(y_{1:\tau}), \theta) \mid \theta \sim \mrm{Ber}(p)]\]
+\end{itemize}
+Note that $V(p, 0) = p \wedge 1-p$. Now, suppose that $H=1$. Then we have two choices
+\begin{itemize}
+	\item Stop. Get loss $V(p,0) = p \wedge (1-p) = Q(p, 1, \mrm{stop})$.
+	\item Sample. Pay $c$ and observe $y \sim pf_1(\cdot) + (1-p)f_0(\cdot)$. Then we have a new posterior
+		\[p_1 = T(y,p) := \frac{pf_1(y)}{pf_1(y) + (1-p)f_0(y)}\]
+		Then we will have to stop, and get loss $V(T(p,y), 0)$. The total loss will be 
+		\[Q(p, 1, \mrm{sample}) = c + \EE[V(p_1, 0) \mid p_0 = p] = c + \int V(T(p,y), 0)[pf_1(y) + (1-p)f_0(y)]\; dy\]
+		So that we have a value
+		\begin{align*}
+		V(p, 1) = \min\{Q(p, 1, \mrm{stop}) + Q(p, 1, \mrm{sample})\}
+		\end{align*}
+\end{itemize}
+These ideas extend for general $H$, in which we have
+\begin{align*}
+	Q(p, h, \mrm{stop}) & = p \wedge (1-p)\\
+	Q(p, h, \mrm{sample}) & = c + \EE[V(p_1, h-1) \mid p_0 = p]\\
+	& = c + \int V(T(p,y), h-1)[pf_1(y) + (1-p)f_0(y)]\; dy\\
+	V(p, h) & = \min\{ Q(p, h, \mrm{stop}), Q(p, h, \mrm{sample})\}
+\end{align*}
+
+\section*{Lecture 3: (1/29)}
+
+First, a brief introduction to dynamic programming for the shortest paths problem. Say we have: 
+\begin{itemize}
+	\item A set of nodes $N$
+	\item Travel times $c_{ij}$, $c_{ii} = 0$
+	\item Target node $k$
+	\item Horizon $H$
+	\item Define $V(i,h)$ as the length of the shortest path from $i$ to $k$ using at most $h$ edges, or $\infty$ if none exists.
+\end{itemize}
+
+The base case is
+\[V(i,0) = \begin{cases}
+	0 & i=k\\
+	\infty & i \neq k
+\end{cases}\]
+For $h > 0$, we have
+\[V(i, h) = \min_{j \in \NN}\; c_{ij} + V(j, h-1)\]
+which is known as Bellman's recursion or the dynamic programming principle. We can write this in another way. Let $\Pi_H = \{\pi \in N^H : \pi_H = k\}$. Then we have
+\[V(i,H) = \min_{\pi \in \Pi_H} \; c_{i, \pi_1} + \sum_{n=1}^{H-1} c_{\pi_n, \pi_{n+1}}\]
+
+\subsection*{Sequential Hypothesis Testing}
+
+Going back to sequential hypothesis testing, we have an algorithm to compute the value function. Recall we have the equations $(*)$
+\begin{align*}
+	V(p,h) & = \min\{Q(p,h,\mrm{stop}), Q(p,h,\mrm{go})\}\\
+	Q(p,h,\mrm{stop}) & = p \wedge 1-p\\
+	Q(p,h,\mrm{go}) & = c + \EE[V(p_1, h-1) \mid p_0 = p]
+\end{align*}
+A continuous algorithm is
+\begin{itemize}
+	\item[] Set $V(p, 0) = p \wedge 1-p$ for all $p \in [0,1]$
+	\item[] For $h=1$ to $H$
+		\begin{itemize}
+			\item[] Set $V(p,h)$ from $V(p', h-1)$ using $(*)$
+		\end{itemize}
+	\item[] The optimal decision is to stop if $Q(p_n, H-n, \mrm{stop}) > Q(p_n, H-n, \mrm{go})$, otherwise $\mrm{go}$
+\end{itemize}
+A discretized algorithm (assuming the $y$ come from a finite set) would be
+\begin{itemize}
+	\item[] Choose $M \in \NN$, $\delta = 1/M$ to discretize probabilities
+	\item[] Represent $V(p, h)$ by an array of length $M+1$, so we index by $V(\lfloor Mp \rfloor, h)$
+	\item[] Set $V(\delta j, 0) = \min(\delta j, 1-\delta j)$ for $j=0$ to $M$
+	\item[] For $h=1$ to $H$
+		\begin{itemize}
+			\item[] For $i=0$ to $M$
+				\begin{itemize}
+					\item[] $p=i\delta$
+					\item[] $V(p,h) = \min\big(p \wedge (1-p),\quad \sum_y V(\mrm{round}(T(p,y)), h-1)[pf_1(y) + (1-p)f_0(y)] \big)$
+				\end{itemize}
+		\end{itemize}
+\end{itemize}
+
+
+\section*{Lecture 4: (2/10)}
+
+Recall that for sequential hypothesis testing, $V(p,h)$ is the expected future cost when $\theta \sim \mrm{Ber}(p)$ and $h$ timestamps remain, under the optimal policy. Then we have Bellman's recursion
+\begin{align*}
+	V(p,0) & = p \wedge (1-p)\\
+	V(p,h) & = \min\big \{p \wedge (1-p), c + \int_y V(T(p,y), h-1)[pf_1(y) + (1-p)f_0(y)]\; dy \big \}
+\end{align*}
+
+\begin{example}[Uber]
+	\begin{align*}
+		y_i & = \ind\{\mbox{Completed trip} \}\\
+		\theta & = \ind\{\mbox{Improvement of at least $1$\%} \}\\
+		f_0 & = \mrm{Ber}(q)\\
+		f_1 & = \mrm{Ber}(q\cdot 1.01)
+	\end{align*}
+\end{example}
+
+We discuss an exact algorithm for sequential hypothesis testing for discrete $y$. The updating is
+\begin{align*}
+	p_n & = \frac{\prod_{m \leq n}f_1(y_m) p_0}{\prod_{m \leq n} f_1(y_m)p_0 + \prod_{m \leq n} f_0(y_m) (1-p_0)}
+\end{align*}
+note that by commutativity of the products, for $y \in \{0,1\}$, it suffices to track $m_1 = \#\{m \leq n \mid y_m = a\}$. Let $p(m,n) = p_n$ when we have seen $m$ $1$'s. Then by defining $V[m,h] = V(p(m, H-h), h)$, we can use the same algorithm as above, with $p = p(m,H-h)$ as the update to $p$.
+
+\begin{itemize}
+	\item[] Set $V[m, 0] = \min(p(m,H) \wedge (1-p(m,H)))$ for $j=0$ to $M$
+	\item[] For $h=1$ to $H$
+		\begin{itemize}
+			\item[] For $m=0$ to $H-h$
+				\begin{itemize}
+					\item[] $p=p(m, H-h)$, $q = pf_1(1) + (1-p)f_0(1)$
+					\item[] $V[m,h] = \min\big(p \wedge (1-p),\quad c + V[m+1, h-1]q + V[m, h-1](1-q) \big)$
+				\end{itemize}
+		\end{itemize}
+\end{itemize}
+
+\section*{Lecture 5: (2/12)}
+
+Missed this lecture due to illness.
+
+In this lecture, we will show that the form of an optimal policy is to sample whenever $p_n$ is in some interval containing $\frac{1}{2}$, and to stop otherwise. More specifically we will show that for all $h \in 0, \ldots, H$, there exist $0 \leq a_h \leq \frac{1}{2} \leq b_n \leq 1$ and an optimal policy $\pi^*$ such that 
+\[\begin{cases}
+	\pi^* \mbox{ samples} & \mbox{if } p_n \in (a_{H-n}, b_{H-n})\\
+	\pi^* \mbox{ stops} & \mbox{otherwise}
+\end{cases}\]
+There are some additional properties of the optimal policy that we will not be considering, but are fairly simple:
+\begin{itemize}
+	\item $a_h, b_h$ are points where there is a tie, and another optimal policy can choose to sample there.
+	\item $(a_h, b_h) \subseteq (a_{h+1}, b_{h+1})$, meaning that a larger horizon makes you more willing to sample.
+	\item $b_h = 1-a_h$ if the loss function is symmetric between $\theta$ and $1-\theta$.
+\end{itemize}
+
+\begin{lemma}\label{lemma:1}
+	Let $f: [0,1] \to \RR$ be a concave function. Let $a \leq b \leq c \in [0,1]$, and $d \in \RR$ be points such that $f(a) \geq d, f(c) \geq d$. Then $f(b) \geq d$.
+\end{lemma}
+\begin{proof}
+	The set $S = \{(x,y) \mid f(x) \geq y \}$ is a convex set since $f$ is concave. Thus, the assumptions give that $(a, f(a)) \in S$ and $(c, f(c)) \in S$. Since $a \leq b \leq c$, we know that $a-c \leq b-c \leq 0$ and $0 \leq c-b \leq c-a$. This means that $\lambda = \frac{c-b}{c-a} \in [0,1]$. We can see that $\lambda (a,d) + (1-\lambda)(c,d) = (b, d) \in S$, so $f(b) \geq d$.
+\end{proof}
+
+\begin{lemma}
+	$V(p,h)$ is concave in $p$ for any $h$.
+\end{lemma}
+\begin{proof}
+	Let $V^\pi(p)$ be the value under policy $\pi$ for any $\pi \in \Pi_H$. This means that
+	\[V^\pi(p) = \EE^\pi[c\tau + L(\pi(y_{1:\tau}), \theta) \mid \theta \sim \mrm{Ber}(p) ]\]
+	and $V(p,H) = \inf_{\pi \in \Pi_H} V^\pi(p)$. Observe that
+	\begin{align*}
+		V^\pi(p) & = \sum_{u=0}^1 \PP(\theta=u \mid \theta \sim \mrm{Ber}(p) \EE^\pi[c\tau + L(\pi(y_{1:\tau}), \theta) \mid \theta=u]\\
+		& = pV^\pi(1) + (1-p)V^\pi(0).
+	\end{align*}
+	Finally, the infimum of linear functions is concave.
+\end{proof}
+
+\begin{lemma}
+	$p \mapsto V(p,h)$ is continuous for $p \in (0,1)$.
+\end{lemma}
+\begin{proof}
+	Concave functions are continuous over open intervals.
+\end{proof}
+
+\begin{lemma}\label{lemma:4}
+	$V(p,h) \leq p \wedge (1-p)$ with equality at $p \in \{0,1\}$.
+\end{lemma}
+\begin{proof}
+	The inequality $V(p,h) \leq p \wedge (1-p)$ can be directly seen by induction on Bellman's recursion. Also, $V(p,h) \geq 0$ by a similar induction argument. At $p \in \{0,1\}$, we then have $0 \leq V(p,h) \leq p \wedge (1-p) = 0$.
+\end{proof}
+
+\begin{theorem}
+	There is a pair of sequences $(a_h)$ and $(b_h)$ where $0 \leq a_h \leq \frac{1}{2} \leq b_h \leq 1$ and an optimal policy $\pi^*$ such that
+	\[\pi^*(y_{1:n}) = -1 \iff p_n \in (a_{H-n}, b_{H-n})\]
+\end{theorem}
+\begin{proof}
+	Let $\pi^*$ be a policy that samples if and only if $V(p_n, H-n) < p_n \wedge (1-p_n)$, so $\pi^*$ breaks ties in favor of stopping. Fix $h$ and consider $p \in [0, 1/2]$. Note that $p \wedge (1-p) = p$ on this range. Let $\Delta(p) = V(p,h) - p$, which is concave since it is a sum of concave functions. $\pi^*$ stops if $\Delta(p) = 0$ and samples if $\Delta(p) < 0$ (note $\Delta(p) \leq 0$ by Lemma \ref{lemma:4}). Define $S$ to be the set of $p$ where $\pi^*$ stops: $S = \{p \in [0,1/2] \mid \Delta(p) = 0\}$.
+
+	First, note that $V(0,h) = 0$, so that $0 \in S$. Now, pick any $p \in S$. By Lemma \ref{lemma:1} we know that $[0,p] \in S$. Letting $a_h = \sup S$, we know that $[0, a_h) \in S$. In fact, $a_h \in S$ because $S$ is the level set of a continuous function and is hence closed.
+
+	By a similar argument, the set of $p \in [1/2, 1]$ for where $\pi^*$ stops is $[b_h, 1]$ for some $\frac{1}{2} \leq b_h \leq 1$. Thus, the set of $p \in [0,1]$ where $\pi^*$ does not stop is $(a_h, b_h)$.
+\end{proof}
+
+\section*{Lecture 6: Infinite Horizon (2/17)}
+
+Note: we are not sure if symmetry of the loss function is enough to guarantee symmetry of $Q$ factors.
+
+Having an infinite horizon often simplifies the math for a problem. It gets rid of the dependence of the the $Q$ factors on the horizon. There are two ways of viewing the infinite horizon problem:
+\begin{itemize}
+	\item Let the set of policies be $\Pi = \{\pi = (\pi_0, \pi_1, \ldots ) \mid \pi_n: \RR^n \to \{-1, 0, 1\} \}$. Then our value function is given by
+		\[V(p) = \inf_{\pi \in \Pi} \EE[c\tau + L(\pi(y_{1:\tau}), \theta) \ind_{\tau < \infty} \mid \theta \sim \mrm{Ber}(p)] \]
+		We have the Bellman equation
+		\begin{align*}
+			V(p) & = \min\{p \wedge (1-p), Q(p, \mrm{go})\}\\
+			Q(p, \mrm{go}) & = c + \int V(T(p,y)) [p f_1(y) + (1-p)f_0(y)] \; dy
+		\end{align*}
+		The optimal policy is to sample iff $Q(p, \mrm{go}) < Q(p, \mrm{stop}) = p\wedge (1-p)$. Algorithmically, one solves this by value iteration:
+		\begin{itemize}
+			\item[] Set $V^{(0)}(p)$ to anything for each $p$.
+			\item[] For $m=1$ to $M$:
+				\begin{itemize}
+					\item[] Set $V^{(m)}(p)$ from $V^{(m-1)}(\cdot)$ for all $p$, using Bellman's recursion.
+				\end{itemize}
+		\end{itemize}
+		With this iteration, $V^{(M)}(\cdot)$ converges to $V(\cdot)$ if $c > 0$. We can check the implementation of value iteration:
+		\begin{itemize}
+			\item Simulating from the approximate optimal policy and compare the value to $V^{(M)}$. The values should be close.
+			\item Run value iteration with $V^{(0)} \geq V$. For instance, we can take $V^{(0)} = 1$. Call the resulting $V^{(M)}$ by $\ol V^{(M)}$. Note that $\ol V^{(M)} \geq V$ as can be seen by induction on the Bellman recursion.
+
+				Then run value iteration with $V^{(0)} \leq V$. For instance, we can take $V^{(0)} = 0$. Call the result $\ul{V}^{(M)}$. We should have $\ul{V}^{(M)} \leq V$.
+		\end{itemize}
+
+	\item Take $H\to \infty$, so it is like taking the limit of the finite horizon problem.
+
+		To do this, solve the finite horizon problem with big $H$. Then approximate $V(p)$ by $V(p, H)$.
+\end{itemize}
+
+General infinite horizon problems where we have a discount factor, in which we are solving
+\[V(s) = \sup_{\pi \in \Pi} \EE\left[\sum_{t=0}^\infty \gamma^t R(s_t, a_t) \mid s_0 = s \right]\]
+have a Bellman recursion of the form
+\[V(s) = \max_a R(s, a) + \gamma \EE[V(\mbox{new $s$})].\]
+The algorithm we are considering above is for an undiscounted dynamic program.
+
+\subsection*{Sequential Probability Ratio Test}
+
+We now consider the odds ratio $\Phi_n = \frac{p_n}{1-p_n}$. Recall that $p_n = \PP(\theta=1 \mid y_{1:n})$ is the posterior probability that $\theta$ is $1$. We can write this
+\begin{align*}
+	p_n & = \PP(\theta = 1 \mid y_{1:n})\\
+		& = \PP(\theta = 1 \mid y_n, y_{1:n-1})\\
+		& = \frac{\PP(y_n \mid \theta=1, y_{1:n-1}) \PP(\theta=1 \mid y_{1:n-1})}{\sum_{u=0}^1 \PP(y_n \mid \theta=u, y_{1:n-1})\PP(\theta=u\mid y_{1:n-1})}\\
+		& = \frac{f_1(y_n) p_{n-1}}{f_1(y_n)p_{n-1} + f_0(y_n)(1-p_{n-1})}\\
+		1-p_n & =  \frac{f_0(y_n) (1-p_{n-1})}{f_1(y_n)p_{n-1} + f_0(y_n)(1-p_{n-1})}
+\end{align*}
+Thus, the odds ratio takes the form
+\begin{align*}
+	\Phi_n & = \frac{f_1(y_n)p_{n-1}}{f_0(y_n)(1-p_{n-1})}\\
+	& = \frac{f_1(y_n)}{f_0(y_n)} \Phi_{n-1}\\
+	& = \left[ \prod_{m=1}^n \frac{f_1(y_m)}{f_0(y_m)} \right] \frac{p_0}{1-p_0}\\
+	& = L_n \frac{p_0}{1-p_0}
+\end{align*}
+$L_n$ is the likelihood ratio of the two hypotheses with data $y_{1:n}$. An optimal policy takes the form:
+\begin{align*}
+	\mrm{go} & \iff p_n \in (a,b)\\
+			 & \iff \frac{p_n}{1-p_n} \in \left(\frac{a}{1-a},\frac{b}{1-b}\right)\\
+			 & \iff	L_n \frac{p_0}{1-p_0} \in \left(\frac{a}{1-a}, \frac{b}{1-b}\right)\\
+			 & \iff L_n \in \left(\frac{1-p_0}{p_0}\frac{a}{1-a}, \frac{1-p_0}{p_0}\frac{b}{1-b} \right)
+\end{align*}
+Where the second line holds since $p \mapsto \frac{p}{1-p}$ is strictly increasing. This is why the problem we have been considering is called the sequential probability ratio test (SPRT).
+
+Let us consider $\alpha_i = \PP(\hat \theta \neq \theta \mid \theta=i)$. Then $\alpha_0$ controls false positives, $\alpha_1$ controls false negatives. Say we allow randomized policies. Then consider the set $S = \{\hat \alpha(\pi) \mid \pi \in \Pi\}$. This set is convex, since we can interpolate between two $\hat \alpha$ by taking a policy that first flips a weighted coin and makes a decision based on that. A frequentist would consider optimality to take the form
+\begin{align*}
+	\min \alpha_1(\pi) \quad \mrm{s.t.} \; \alpha_0(\pi) \leq .05
+\end{align*}
+We can take a tangent to $S$ at the solution $\alpha_0(\pi)(1-p) + \alpha_1(\pi)p = C$. Then we can get the same solution by
+\begin{align*}
+	& \min_\pi \; \alpha_0(\pi)(1-p) + \alpha_1(\pi)p\\
+	& = \min_\pi \; \EE[L(\hat \theta, \theta) \mid \theta \sim \mrm{Ber}(p)]
+\end{align*}
+
+
+\section*{Lecture 7: (2/19)}
+
+Define the risk and expected number of samples given $\theta = i$
+\begin{align*}
+	R_i(\pi) & = cN_i(\pi) + \alpha_i(\pi)\\
+	N_i(\pi) & = \EE^\pi[\tau \mid \theta=i]\\
+	\alpha_i(\pi) & = \PP^\pi(\hat \theta \neq \theta \mid \theta = i)
+\end{align*}
+Consider the set $S = \{ \vec R(\pi) \mid \pi \in \Pi \}$. Allowing randomized policies, this set is convex. This is because we may choose policies that interpolate between two risk vectors by introducing a weighted coin into the policy. To get a policy $\pi$ with risk $\vec R(\pi) = \lambda \vec R(\pi') + (1-\lambda) \vec R(\pi '')$, take the policy $\pi$ which flips a coin with $\PP(X = 1) = \lambda$. If $X = 1$, follow $\pi'$, and if $X = 0$, follow $\pi''$. Then we have that
+\begin{align*}
+	N_i(\pi) & = \sum_{j=0}^n \PP(x=j) \EE^\pi[\tau \mid X-j]\\
+	& = \lambda N_i(\pi') + (1-\lambda) N_i(\pi'')
+\end{align*}
+and similarly for $\alpha_i(\pi)$. $S$ is convex but unbounded, since we can take policies that sample a lot. At any boundary point $\pi^*$, we can take a supporting hyperplane $C = pR_1(\pi^*) + (1-p)R_0(\pi^*) = V^{\pi^*}(p)$. Then
+\[\mbox{$\pi^*$ solves } \min_\pi\; pR_1(\pi) + (1-p)R_0(\pi)\]
+Now consider $T = \{(\vec N(\pi), \vec \alpha(\pi)) \mid \pi \in \Pi \}$, which is also convex by the same reasoning as above. We say that $\pi$ is dominated by $\pi'$ if $N_i(\pi) \geq N_i(\pi')$ and $\alpha_i(\pi) \geq \alpha_i(\pi')$ for $i=0,1$ with at least one strict inequality.
+
+We claim that if $\pi^*$ is not dominated, then $\pi^*$ is Bayes optimal for sequential hypothesis testing for some $p, c,$ and $l$, where the loss is
+\[L(\theta, \hat \theta) = \begin{cases}
+	1-l & \hat \theta \neq \theta = 0\\
+	l & \hat \theta \neq \theta=1\\
+	0 & \hat \theta = \theta
+\end{cases}\]
+\begin{proof}[Proof sketch]
+	Since $\pi^*$ is not dominated, we can take a supporting hyperplane to $T$ at $(\vec N(\pi^*), \vec \alpha(\pi^*))$, given by $\sum_{i=0}^1 \lambda_{i\alpha} \alpha_i(\pi) + \lambda_{iN}N_i(\pi) = C.$ It suffices to find $p, c, l$ such that this hyperplane is parallel to the objective function
+	\begin{align*}
+		\EE^\pi[c\tau + L(\theta, \hat \theta) \mid \theta \sim \mrm{Ber}(p)] & = cpN_1(\pi) + c(1-p)N_0(\pi) + pl\alpha_1(\pi) + (1-p)(1-l)\alpha_0(\pi)
+	\end{align*}
+	In other words, we need $(cp, c(1-p), pl, (1-p)(1-l))$ to be parallel to $(\lambda_{1N}, \lambda_{0N}, \lambda_{1\alpha}, \lambda_{0\alpha})$. This is possible, with the details in the notes.
+\end{proof}
+
+\begin{theorem}[Wald, Wolfowitz]
+	Pick any $0 < A < B < 1$. Assume $\PP\left (\frac{f_1(Y_1)}{f_0(Y_0)} \neq 1 \mid \theta \right) > 0,\; \theta=0, 1$. Let $\pi$ be the SPRT with these thresholds, i.e.
+	\[\pi(y_{1:n}) = \begin{cases}
+		-1 & L_n \in (A,B)\\
+		+1 & L_n \geq B\\
+		0 & L_n \leq A
+	\end{cases}\]
+	Let $\pi'$ have $\alpha_i(\pi') \leq \alpha_i(\pi), \; i=0,1$. Then $N_i(\pi) \leq N_i(\pi'),$ for both $i=0,1$.
+\end{theorem}
+\begin{proof}[Proof sketch]
+	Pick $p \in (0,1)$. There exists $c, l$ such that $\pi$ is Bayes optimal for the problem given by $p,c,l$ (this can be shown since there are enough degrees of freedom, we omit the details). Then by optimality of $\pi$,
+	\begin{align*}
+		cpN_1(\pi) + c(1-p)N_0(\pi) & \leq cpN_1(\pi') + c(1-p)N_0(\pi') + pl[\alpha_1(\pi') - \alpha_1(\pi)] + (1-p)(1-l)[\alpha_0(\pi') - \alpha_0(\pi)]\\
+									& \leq cpN_1(\pi') + c(1-p)N_0(\pi')
+	\end{align*}
+	since the dropped terms are nonpositive by assumption. Thus, we have
+	\begin{align*}
+		pN_1(\pi) + (1-p)N_0(\pi) & \leq pN_1(\pi') + (1-p)N_0(\pi')
+	\end{align*}
+	sending $p \to 0$ and $p \to 1$ give our desired inequalities.
+\end{proof}
+
+In the next lectures, we will consider a set up
+\begin{itemize}
+	\item Parameters $\theta \in \Theta$
+	\item Actions $X_n \in \mc X$
+	\item Observations $Y_n \in \mc Y$
+	\item $\PP(Y_n \mid X_n, \theta)$
+	\item Reward $R(X_n, Y_n, \theta)$
+\end{itemize}
+and we want to solve the problem
+\[\sup_\pi \; \EE^\pi\left[\sum_{n=0}^N \gamma^n R(X_n, Y_n)\right]\]
+for which sequential hypothesis testing is a special case of.
+
+
+\end{document}
